@@ -77,6 +77,22 @@ def build_autoencoder(n_neurons, latent_dim):
     autoencoder.compile(optimizer="adam", loss="mse")
     return autoencoder, encoder
 
+
+def correlation_structure_similarity(X_orig, X_recon):
+    """
+    Pearson correlation between off-diagonal entries of the cross-neuron
+    correlation matrices of original and reconstructed data. Tells us
+    whether the autoencoder preserves the relationships *between* neurons.
+    Returns 1.0 when X_recon == X_orig.
+    """
+    C_orig  = np.corrcoef(X_orig.T)
+    C_recon = np.corrcoef(X_recon.T)
+    iu      = np.triu_indices(C_orig.shape[0], k=1)
+    orig_v  = C_orig[iu]
+    recon_v = C_recon[iu]
+    mask    = np.isfinite(orig_v) & np.isfinite(recon_v)
+    return float(np.corrcoef(orig_v[mask], recon_v[mask])[0, 1])
+
 # ── 3. Sweep latent dimensions ────────────────────────────────────────────────
 LATENT_DIMS = [4, 8, 13, 26, 32, N_NEURONS]  # N_NEURONS = uncompressed baseline
 results = []  # list of dicts
@@ -92,7 +108,8 @@ for ldim in LATENT_DIMS:
         # Uncompressed baseline — skip autoencoder, perfect reconstruction
         X_tr = X_train_z
         X_va = X_valid_z
-        recon_r2 = 1.0
+        recon_r2  = 1.0
+        corr_sim  = 1.0
         # Save the z-scored data as the "encoded" output for consistency
         np.save(f"{out}/X_train_encoded.npy", X_tr)
         np.save(f"{out}/X_valid_encoded.npy", X_va)
@@ -108,6 +125,7 @@ for ldim in LATENT_DIMS:
         # Reconstruction quality: how well does X̂ = decode(encode(X)) match X?
         X_reconstructed = ae.predict(X_valid_z, verbose=0)
         recon_r2 = float(np.mean(get_R2(X_valid_z, X_reconstructed)))
+        corr_sim = correlation_structure_similarity(X_valid_z, X_reconstructed)
 
         X_tr = enc.predict(X_train_z, verbose=0)
         X_va = enc.predict(X_valid_z, verbose=0)
@@ -127,7 +145,7 @@ for ldim in LATENT_DIMS:
         lt_std[lt_std == 0] = 1
         X_tr = (X_tr - lt_mean) / lt_std
         X_va = (X_va - lt_mean) / lt_std
-        print(f"autoencoder trained, encoded shape: {X_tr.shape[1]}  recon R²={recon_r2:.3f}")
+        print(f"autoencoder trained, encoded shape: {X_tr.shape[1]}  recon R²={recon_r2:.3f}  corr-sim={corr_sim:.3f}")
 
     model_kf = KalmanFilterDecoder(C=1)
     model_kf.fit(X_tr, y_train_c)
@@ -150,6 +168,7 @@ for ldim in LATENT_DIMS:
         "rho2_xv":          rho[2] ** 2,
         "rho2_yv":          rho[3] ** 2,
         "recon_r2":         recon_r2,
+        "corr_sim":         corr_sim,
         "y_pred":           y_pred,   # saved for qualitative plots
     })
     print(f"  R² x-vel={R2[2]:.3f}  y-vel={R2[3]:.3f}")
@@ -161,7 +180,7 @@ import csv
 csv_path = os.path.join(OUTPUT_DIR, "metrics_summary.csv")
 fieldnames = ["latent_dim", "compression", "error_mean_xv", "error_mean_yv",
               "error_std_xv", "error_std_yv", "r2_xv", "r2_yv",
-              "rho2_xv", "rho2_yv", "recon_r2"]
+              "rho2_xv", "rho2_yv", "recon_r2", "corr_sim"]
 with open(csv_path, "w", newline="") as f:
     writer = csv.DictWriter(f, fieldnames=fieldnames)
     writer.writeheader()
@@ -183,6 +202,7 @@ r2_yv = np.array([r["r2_yv"]         for r in results])
 rh_xv    = np.array([r["rho2_xv"]  for r in results])
 rh_yv    = np.array([r["rho2_yv"]  for r in results])
 recon_r2 = np.array([r["recon_r2"] for r in results])
+corr_sim = np.array([r["corr_sim"] for r in results])
 
 ldim_labels = [str(d) for d in ldims]
 BASE = N_NEURONS  # uncompressed reference
@@ -198,7 +218,8 @@ ax_em  = fig4.add_subplot(gs[0, 0])
 ax_es  = fig4.add_subplot(gs[0, 1])
 ax_r2  = fig4.add_subplot(gs[1, 0])
 ax_rh  = fig4.add_subplot(gs[1, 1])
-ax_rec = fig4.add_subplot(gs[2, :])   # spans full bottom row
+ax_rec = fig4.add_subplot(gs[2, 0])
+ax_cor = fig4.add_subplot(gs[2, 1])
 
 base_idx = list(ldims).index(BASE)
 
@@ -225,13 +246,13 @@ for (title, xv, yv), ax in zip(
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
-# Reconstruction R² panel (single line — averaged across neurons)
+# Reconstruction R² panel
 ax_rec.plot(ldim_labels, recon_r2, "D-", color="#5B9359", linewidth=1.5,
             markersize=7, label="mean R² across neurons")
 ax_rec.axvline(x=base_idx, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
 ax_rec.plot(base_idx, recon_r2[base_idx], "o",
             markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
-ax_rec.set_title("Autoencoder Reconstruction R²  (X̂ vs original X, averaged over neurons)")
+ax_rec.set_title("Reconstruction R²  (per-neuron, averaged)")
 ax_rec.set_xlabel("latent_dim")
 ax_rec.set_ylabel("reconstruction R²")
 ax_rec.set_xticks(range(len(ldim_labels)))
@@ -240,6 +261,22 @@ ax_rec.set_ylim(-0.05, 1.05)
 ax_rec.axhline(y=1.0, color="grey", linestyle=":", linewidth=1)
 ax_rec.legend(fontsize=8)
 ax_rec.grid(True, alpha=0.3)
+
+# Cross-neuron correlation structure preservation
+ax_cor.plot(ldim_labels, corr_sim, "D-", color="#8B5CF6", linewidth=1.5,
+            markersize=7, label="ρ(C_orig, C_recon) off-diagonal")
+ax_cor.axvline(x=base_idx, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
+ax_cor.plot(base_idx, corr_sim[base_idx], "o",
+            markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
+ax_cor.set_title("Cross-Neuron Correlation Structure Preservation")
+ax_cor.set_xlabel("latent_dim")
+ax_cor.set_ylabel("correlation-matrix similarity")
+ax_cor.set_xticks(range(len(ldim_labels)))
+ax_cor.set_xticklabels(ldim_labels)
+ax_cor.set_ylim(-0.05, 1.05)
+ax_cor.axhline(y=1.0, color="grey", linestyle=":", linewidth=1)
+ax_cor.legend(fontsize=8)
+ax_cor.grid(True, alpha=0.3)
 
 fig4.savefig("fig4_results_grid.png", dpi=150, bbox_inches="tight")
 print("Saved fig4_results_grid.png")
