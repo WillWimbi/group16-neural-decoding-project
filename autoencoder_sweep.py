@@ -204,7 +204,6 @@ rh_yv    = np.array([r["rho2_yv"]  for r in results])
 recon_r2 = np.array([r["recon_r2"] for r in results])
 corr_sim = np.array([r["corr_sim"] for r in results])
 
-ldim_labels = [str(d) for d in ldims]
 BASE = N_NEURONS  # uncompressed reference
 
 # ── Figure 4: Results grid (slide 11 + reconstruction R²) ────────────────────
@@ -231,48 +230,48 @@ for (title, xv, yv), ax in zip(
      ("rho2",       rh_xv, rh_yv)],
     [ax_em, ax_es, ax_r2, ax_rh]
 ):
-    ax.plot(ldim_labels, xv, "o-", color="#4472C4", label="x-velocity")
-    ax.plot(ldim_labels, yv, "s-", color="#ED7D31", label="y-velocity")
-    ax.axvline(x=base_idx, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
-    ax.plot(base_idx, xv[base_idx], "o",
+    ax.plot(ldims, xv, "o-", color="#4472C4", label="x-velocity")
+    ax.plot(ldims, yv, "s-", color="#ED7D31", label="y-velocity")
+    ax.axvline(x=BASE, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
+    ax.plot(ldims[base_idx], xv[base_idx], "o",
             markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
-    ax.plot(base_idx, yv[base_idx], "o",
+    ax.plot(ldims[base_idx], yv[base_idx], "o",
             markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
     ax.set_title(title)
     ax.set_xlabel("latent_dim")
     ax.set_ylabel(title)
-    ax.set_xticks(range(len(ldim_labels)))
-    ax.set_xticklabels(ldim_labels)
+    ax.set_xticks(ldims)
+    ax.set_xticklabels(ldims)
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
 # Reconstruction R² panel
-ax_rec.plot(ldim_labels, recon_r2, "D-", color="#5B9359", linewidth=1.5,
+ax_rec.plot(ldims, recon_r2, "D-", color="#5B9359", linewidth=1.5,
             markersize=7, label="mean R² across neurons")
-ax_rec.axvline(x=base_idx, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
-ax_rec.plot(base_idx, recon_r2[base_idx], "o",
+ax_rec.axvline(x=BASE, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
+ax_rec.plot(ldims[base_idx], recon_r2[base_idx], "o",
             markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
 ax_rec.set_title("Reconstruction R²  (per-neuron, averaged)")
 ax_rec.set_xlabel("latent_dim")
 ax_rec.set_ylabel("reconstruction R²")
-ax_rec.set_xticks(range(len(ldim_labels)))
-ax_rec.set_xticklabels(ldim_labels)
+ax_rec.set_xticks(ldims)
+ax_rec.set_xticklabels(ldims)
 ax_rec.set_ylim(-0.05, 1.05)
 ax_rec.axhline(y=1.0, color="grey", linestyle=":", linewidth=1)
 ax_rec.legend(fontsize=8)
 ax_rec.grid(True, alpha=0.3)
 
 # Cross-neuron correlation structure preservation
-ax_cor.plot(ldim_labels, corr_sim, "D-", color="#8B5CF6", linewidth=1.5,
+ax_cor.plot(ldims, corr_sim, "D-", color="#8B5CF6", linewidth=1.5,
             markersize=7, label="ρ(C_orig, C_recon) off-diagonal")
-ax_cor.axvline(x=base_idx, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
-ax_cor.plot(base_idx, corr_sim[base_idx], "o",
+ax_cor.axvline(x=BASE, color="salmon", linestyle="--", linewidth=1.2, alpha=0.8)
+ax_cor.plot(ldims[base_idx], corr_sim[base_idx], "o",
             markersize=14, markerfacecolor="none", markeredgecolor="red", markeredgewidth=2)
 ax_cor.set_title("Cross-Neuron Correlation Structure Preservation")
 ax_cor.set_xlabel("latent_dim")
 ax_cor.set_ylabel("correlation-matrix similarity")
-ax_cor.set_xticks(range(len(ldim_labels)))
-ax_cor.set_xticklabels(ldim_labels)
+ax_cor.set_xticks(ldims)
+ax_cor.set_xticklabels(ldims)
 ax_cor.set_ylim(-0.05, 1.05)
 ax_cor.axhline(y=1.0, color="grey", linestyle=":", linewidth=1)
 ax_cor.legend(fontsize=8)
