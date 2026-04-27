@@ -1,0 +1,73 @@
+AE latent-dimension sweep + Kalman filter on S1
+================================================
+
+Pipeline
+--------
+- Inputs: S1 spikes (T, 52) + hand velocity (T, 2), 50 ms bins.
+- Build kinematic state [pos_x, pos_y, vx, vy, ax, ay] (KF benefits from
+  the full state even when scoring on velocity only).
+- 70/15/15 chronological split, 1-bin buffer between sets.
+- Z-score spikes using train statistics only.
+- For each latent_dim in {4, 8, 13, 26, 32, 52}:
+    * Train AE 52 -> 32 -> latent -> 32 -> 52 on TRAIN bins
+      (200 epochs, Adam lr=1e-3, batch 256, MSE).
+    * Encode all bins through the AE.
+    * Z-score the latents (train stats), zero-center the kinematic
+      output (train mean only).
+    * Fit Kalman filter (C=1.0, Wu et al. 2003 form) on train, predict
+      on validation.
+    * Record R^2, rho^2 on cols 2:4 (vx, vy) and AE reconstruction R^2.
+- At latent_dim=52 the AE is skipped: z-scored spikes pass through
+  directly, so reconstruction R^2 is 1.0 by construction.
+
+Standalone
+----------
+KalmanFilter, r2_per_output, rho_per_output are implemented inline;
+the script does not import the Neural_Decoding package.
+
+Reproduction
+------------
+1. Set the S1_DATA env var to the full path of example_data_s1.pickle
+   (or hard-code DATA_PATH at the top of run_sweep.py).
+2. Activate a Python 3.12 env with: numpy, torch (CUDA optional),
+   matplotlib.
+3. python run_sweep.py
+   ~3.5 min on a single CUDA GPU; longer on CPU.
+   Seeds: numpy=0, torch=0 -> deterministic.
+
+Results (run on CUDA, llms-ai-stack-26 venv)
+--------------------------------------------
+  latent_dim   R2_vx    R2_vy   rho2_vx  rho2_vy  reconR2
+        4     +0.175   +0.291   +0.230   +0.312   0.337
+        8     +0.370   +0.368   +0.394   +0.373   0.497
+       13     +0.516   +0.516   +0.538   +0.520   0.542
+       26     +0.651   +0.622   +0.658   +0.626   0.648
+       32     +0.670   +0.662   +0.684   +0.664   0.704
+       52     +0.689   +0.673   +0.708   +0.676   1.000
+
+The 52d row is the no-compression KF baseline. R^2 climbs monotonically
+with latent_dim; reconstruction R^2 saturates at 1.0 by construction
+when the AE is skipped.
+
+Notes on the slide figures
+--------------------------
+The slide deck's R^2 panel stays near 0.6 even at 4d, while ours drops
+to ~0.2. Reconstruction R^2 inverts: ours is higher at 4d than the
+slides'. A deep AE reconstructs noisier directions; a linear projection
+(PCA) keeps only top-variance components, which for ~50 cosine-tuned
+neurons are essentially a velocity basis -- great for decoding, capped
+on reconstruction. Swapping the AE for sklearn.decomposition.PCA in
+train_and_encode would be a small change worth trying if a tighter
+match is needed.
+
+Files
+-----
+run_sweep.py              standalone script (KF + metrics inlined)
+notes.txt                 this file
+results.json              per-latent_dim metrics
+fig1_qualitative_check.png
+fig2_region_check.png
+fig3_error_histograms.png
+fig4_results_grid.png
+fig5_compression.png
+fig6_sidebyside.png
